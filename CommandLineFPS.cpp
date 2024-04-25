@@ -56,27 +56,30 @@
 	Author
 	~~~~~~
 	Twitter: @javidx9
-	Blog: www.onelonecoder.com
-
-	Video:
-	~~~~~~	
-	https://youtu.be/xW8skO7MFYw
-
-	Last Updated: 27/02/2017
+	
+	Implmentation on LINUX using ncurses based on Zarca modification of javidx9 work
 */
 
 #include <iostream>
-#include <vector>
 #include <utility>
+#include<vector>
 #include <algorithm>
 #include <chrono>
-using namespace std;
-
+#include<string>
+#include <math.h>
+#include<thread>
+#include<unistd.h>
+#include<stdlib.h>
 #include <stdio.h>
-#include <Windows.h>
+#include <ncursesw/ncurses.h>
+#include <locale.h>
 
-int nScreenWidth = 120;			// Console Screen Size X (columns)
-int nScreenHeight = 40;			// Console Screen Size Y (rows)
+using namespace std;
+#define SHOWMAP
+
+int nScreenWidth = 130;			// Console Screen Size X (columns) in shell MACOS
+int nScreenHeight = 34;			// Console Screen Size Y (rows)    in shell MACOS 
+
 int nMapWidth = 16;				// World Dimensions
 int nMapHeight = 16;
 
@@ -85,18 +88,91 @@ float fPlayerY = 5.09f;
 float fPlayerA = 0.0f;			// Player Start Rotation
 float fFOV = 3.14159f / 4.0f;	// Field of View
 float fDepth = 16.0f;			// Maximum rendering distance
-float fSpeed = 5.0f;			// Walking Speed
+float fSpeed = 150.0f;			// Walking Speed
+bool pressed = false;
+wstring map; // the mini map 
+char user_key_value = '\0'; // user input
+std::thread * background_job; 
+
+// by value not by reference to avoid race condition better
+void move_player(char key_value, float fElapsedTime){
+	if (!pressed){
+		return;
+	}
+	// ACK here
+	else{
+		pressed = false;
+	}
+	// Handle CCW Rotation
+	if (key_value == 'a')
+		fPlayerA -= (fSpeed * 0.75f) * fElapsedTime;
+
+	// Handle CW Rotation
+	if (key_value == 'd')
+		fPlayerA += (fSpeed * 0.75f) * fElapsedTime;
+	
+	// Handle Forwards movement & collision
+	if (key_value == 'w')
+	{
+		fPlayerX += sinf(fPlayerA) * fSpeed * fElapsedTime;;
+		fPlayerY += cosf(fPlayerA) * fSpeed * fElapsedTime;;
+		if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
+		{
+			fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;;
+			fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;;
+		}			
+	}
+	// Handle backwards movement & collision
+	if (key_value == 's')
+	{
+		fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;;
+		fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;;
+		if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
+		{
+			fPlayerX += sinf(fPlayerA) * fSpeed * fElapsedTime;;
+			fPlayerY += cosf(fPlayerA) * fSpeed * fElapsedTime;;
+		}
+	}
+
+}
+
+void get_key(){
+	char key_value = '\0';
+	for(;;){
+		/*
+		std::cin >> key_value;
+		if(!cin){
+			continue;
+		}
+		*/
+		user_key_value = getchar();
+		//user_key_value = key_value;
+		//TODO automic class
+		pressed = true;
+		
+	}
+}
+void GetAsyncKeyState(){
+    setlocale(LC_ALL, "");
+	// working in a async way
+	background_job =  new std::thread(get_key);
+}
 
 int main()
 {
+	// preprare for latter actions
+	// preprocess();
+	initscr();
+	WINDOW * win = newwin(nScreenHeight, nScreenWidth, 0, 0);
+    refresh();
+    box(win, 0, 0);
+    wrefresh(win);
+
 	// Create Screen Buffer
-	wchar_t *screen = new wchar_t[nScreenWidth*nScreenHeight];
-	HANDLE hConsole = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
-	SetConsoleActiveScreenBuffer(hConsole);
-	DWORD dwBytesWritten = 0;
+	wchar_t* screen = new wchar_t[nScreenWidth*nScreenHeight+1];
+	screen[nScreenWidth * nScreenHeight] = '\0';
 
 	// Create Map of world space # = wall block, . = space
-	wstring map;
 	map += L"#########.......";
 	map += L"#...............";
 	map += L"#.......########";
@@ -113,11 +189,13 @@ int main()
 	map += L"#......#########";
 	map += L"#..............#";
 	map += L"################";
-
+	
 	auto tp1 = chrono::system_clock::now();
 	auto tp2 = chrono::system_clock::now();
+	// detect user's input in the background
+	GetAsyncKeyState();
 	
-	while (1)
+	for(;;)
 	{
 		// We'll need time differential per frame to calculate modification
 		// to movement speeds, to ensure consistant movement, as ray-tracing
@@ -127,38 +205,7 @@ int main()
 		tp1 = tp2;
 		float fElapsedTime = elapsedTime.count();
 
-
-		// Handle CCW Rotation
-		if (GetAsyncKeyState((unsigned short)'A') & 0x8000)
-			fPlayerA -= (fSpeed * 0.75f) * fElapsedTime;
-
-		// Handle CW Rotation
-		if (GetAsyncKeyState((unsigned short)'D') & 0x8000)
-			fPlayerA += (fSpeed * 0.75f) * fElapsedTime;
-		
-		// Handle Forwards movement & collision
-		if (GetAsyncKeyState((unsigned short)'W') & 0x8000)
-		{
-			fPlayerX += sinf(fPlayerA) * fSpeed * fElapsedTime;;
-			fPlayerY += cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
-			{
-				fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;;
-				fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			}			
-		}
-
-		// Handle backwards movement & collision
-		if (GetAsyncKeyState((unsigned short)'S') & 0x8000)
-		{
-			fPlayerX -= sinf(fPlayerA) * fSpeed * fElapsedTime;;
-			fPlayerY -= cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			if (map.c_str()[(int)fPlayerX * nMapWidth + (int)fPlayerY] == '#')
-			{
-				fPlayerX += sinf(fPlayerA) * fSpeed * fElapsedTime;;
-				fPlayerY += cosf(fPlayerA) * fSpeed * fElapsedTime;;
-			}
-		}
+		move_player(user_key_value, fElapsedTime);
 
 		for (int x = 0; x < nScreenWidth; x++)
 		{
@@ -222,8 +269,8 @@ int main()
 						// First two/three are closest (we will never see all four)
 						float fBound = 0.01;
 						if (acos(p.at(0).second) < fBound) bBoundary = true;
-						if (acos(p.at(1).second) < fBound) bBoundary = true;
-						if (acos(p.at(2).second) < fBound) bBoundary = true;
+						//if (acos(p.at(1).second) < fBound) bBoundary = true;
+						//if (acos(p.at(2).second) < fBound) bBoundary = true;
 					}
 				}
 			}
@@ -233,11 +280,11 @@ int main()
 			int nFloor = nScreenHeight - nCeiling;
 
 			// Shader walls based on distance
-			short nShade = ' ';
-			if (fDistanceToWall <= fDepth / 4.0f)			nShade = 0x2588;	// Very close	
-			else if (fDistanceToWall < fDepth / 3.0f)		nShade = 0x2593;
-			else if (fDistanceToWall < fDepth / 2.0f)		nShade = 0x2592;
-			else if (fDistanceToWall < fDepth)				nShade = 0x2591;
+			wchar_t nShade = ' ';
+			if (fDistanceToWall <= fDepth / 4.0f)			nShade = L'█';	// Very close	
+			else if (fDistanceToWall < fDepth / 3.0f)		nShade = L'▓';
+			else if (fDistanceToWall < fDepth / 2.0f)		nShade = L'▒';
+			else if (fDistanceToWall < fDepth)				nShade = L'░';
 			else											nShade = ' ';		// Too far away
 
 			if (bBoundary)		nShade = ' '; // Black it out
@@ -264,22 +311,19 @@ int main()
 		}
 
 		// Display Stats
-		swprintf_s(screen, 40, L"X=%3.2f, Y=%3.2f, A=%3.2f FPS=%3.2f ", fPlayerX, fPlayerY, fPlayerA, 1.0f/fElapsedTime);
-
+		//	swprintf_s(screen, 40, L"X=%3.2f, Y=%3.2f, A=%3.2f FPS=%3.2f ", fPlayerX, fPlayerY, fPlayerA, 1.0f/fElapsedTime);		
 		// Display Map
+		#ifdef SHOWMAP
 		for (int nx = 0; nx < nMapWidth; nx++)
-			for (int ny = 0; ny < nMapWidth; ny++)
+			for (int ny = 0; ny < nMapHeight; ny++)
 			{
 				screen[(ny+1)*nScreenWidth + nx] = map[ny * nMapWidth + nx];
 			}
 		screen[((int)fPlayerX+1) * nScreenWidth + (int)fPlayerY] = 'P';
-
+		#endif
 		// Display Frame
-		screen[nScreenWidth * nScreenHeight - 1] = '\0';
-		WriteConsoleOutputCharacter(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
+		mvwaddwstr(win, 0, 0, screen);
+		wrefresh(win);
 	}
-
 	return 0;
 }
-
-// That's It!! - Jx9
